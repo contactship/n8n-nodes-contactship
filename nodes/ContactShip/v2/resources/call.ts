@@ -16,7 +16,9 @@ import type { ResourceHandler } from './common';
 import {
 	agentLocator,
 	contactIdField,
+	getMappedValues,
 	limitField,
+	resolveContactId,
 	returnAllField,
 	simplifyField,
 	sortField,
@@ -38,14 +40,14 @@ const callIdField: INodeProperties = {
 };
 
 const variablesOption: INodeProperties = {
-	displayName: 'Variables',
+	displayName: 'Extra Variables',
 	name: 'variables',
 	type: 'fixedCollection',
 	placeholder: 'Add Variable',
 	default: {},
 	typeOptions: { multipleValues: true },
 	description:
-		'Extra context passed to the agent for this call, such as an account balance or a product name',
+		"Other context passed to the agent for this call, such as an account balance or a product name. It overrides a variable of the same name in 'Agent Variables'.",
 	options: [
 		{
 			displayName: 'Variable',
@@ -68,6 +70,38 @@ const variablesOption: INodeProperties = {
 			],
 		},
 	],
+};
+
+const variablesJsonOption: INodeProperties = {
+	displayName: 'Extra Variables (JSON)',
+	name: 'variablesJson',
+	type: 'json',
+	default: '{}',
+	description:
+		'More variables as a JSON object of names and values, for example {"amount_due": "120.50"}. It overrides variables with the same name.',
+};
+
+const agentVariablesField: INodeProperties = {
+	displayName: 'Agent Variables',
+	name: 'agentVariables',
+	type: 'resourceMapper',
+	noDataExpression: true,
+	default: { mappingMode: 'defineBelow', value: null },
+	description: 'Values for the {{variables}} in the prompt of the agent, sent with this call',
+	typeOptions: {
+		loadOptionsDependsOn: ['agentId.value'],
+		resourceMapper: {
+			resourceMapperMethod: 'getAgentVariables',
+			mode: 'add',
+			fieldWords: { singular: 'variable', plural: 'variables' },
+			addAllFields: true,
+			multiKeyMatch: false,
+			supportAutoMap: false,
+			noFieldsError:
+				"This agent's prompt has no {{variables}} to fill. Add any extra context in 'Additional Fields → Extra Variables'.",
+		},
+	},
+	displayOptions: { show: { resource: [RESOURCE], operation: ['makeCall', 'callContact'] } },
 };
 
 const metadataOption: INodeProperties = {
@@ -269,8 +303,9 @@ export const callFields: INodeProperties[] = [
 	contactIdField(
 		RESOURCE,
 		['callContact'],
-		'ID of the contact to call. Their phone number and profile are used.',
+		'The contact to call. Their phone number and profile are used.',
 	),
+	agentVariablesField,
 	{
 		displayName: 'Additional Fields',
 		name: 'additionalFields',
@@ -303,6 +338,8 @@ export const callFields: INodeProperties[] = [
 				default: '',
 				description: 'Email of the person to call, passed to the agent as context',
 			},
+			variablesOption,
+			variablesJsonOption,
 			metadataOption,
 			scheduleOption,
 			{
@@ -313,7 +350,6 @@ export const callFields: INodeProperties[] = [
 				description:
 					'Whether to update the contact that already has this phone number with the name, email and country sent here',
 			},
-			variablesOption,
 			{
 				displayName: 'Webhook URL',
 				name: 'webhookUrl',
@@ -332,7 +368,7 @@ export const callFields: INodeProperties[] = [
 		placeholder: 'Add Field',
 		default: {},
 		displayOptions: { show: { resource: [RESOURCE], operation: ['callContact'] } },
-		options: [metadataOption, scheduleOption, variablesOption],
+		options: [variablesOption, variablesJsonOption, metadataOption, scheduleOption],
 	},
 
 	// Get, Get Status, Stop, Cancel
@@ -503,11 +539,35 @@ function applyCommonCallFields(
 	additionalFields: IDataObject,
 	itemIndex: number,
 ): void {
-	const variables = toKeyValueList(
+	// Agent Variables, then Extra Variables, then the JSON: a later value replaces an earlier one.
+	const variables = new Map<string, string>();
+	const { values } = getMappedValues.call(this, 'agentVariables', itemIndex);
+	for (const [key, value] of Object.entries(values)) variables.set(key, String(value));
+	for (const { key, value } of toKeyValueList(
 		additionalFields.variables as IDataObject | undefined,
 		'variable',
+	)) {
+		variables.set(key, value);
+	}
+	const extra = parseJsonParameter.call(
+		this,
+		additionalFields.variablesJson,
+		'Extra Variables (JSON)',
+		itemIndex,
 	);
-	if (variables.length) body.additional_data = variables;
+	if (Array.isArray(extra)) {
+		throw new NodeOperationError(this.getNode(), "'Extra Variables (JSON)' must be a JSON object", {
+			description: 'Enter an object such as {"amount_due": "120.50"}, not an array.',
+			itemIndex,
+		});
+	}
+	for (const [key, value] of Object.entries(extra ?? {})) {
+		if (!key.trim() || value === undefined || value === null) continue;
+		variables.set(key.trim(), typeof value === 'object' ? JSON.stringify(value) : String(value));
+	}
+	if (variables.size) {
+		body.additional_data = [...variables].map(([key, value]) => ({ key, value }));
+	}
 
 	const metadata = parseJsonParameter.call(
 		this,
@@ -569,7 +629,7 @@ export const executeCall: ResourceHandler = async function (this, operation, i) 
 	if (operation === 'callContact') {
 		const additionalFields = this.getNodeParameter('additionalFields', i, {}) as IDataObject;
 		const body: IDataObject = {
-			contact_id: (this.getNodeParameter('contactId', i) as string).trim(),
+			contact_id: await resolveContactId.call(this, i),
 			agent_id: getIdParameter.call(this, 'agentId', i, 'Agent'),
 			from_number_id: getIdParameter.call(this, 'fromNumberId', i, 'From Number'),
 		};

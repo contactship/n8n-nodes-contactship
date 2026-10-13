@@ -4,7 +4,7 @@ import { NodeOperationError } from 'n8n-workflow';
 import { contactShipApiRequest } from '../../shared/transport';
 import { getIdParameter, toExecutionData, unwrap } from '../../shared/utils';
 import type { ResourceHandler } from './common';
-import { contactIdField } from './common';
+import { contactIdField, resolveContactId } from './common';
 
 const RESOURCE = 'board';
 
@@ -100,7 +100,7 @@ export const boardFields: INodeProperties[] = [
 		type: 'options',
 		required: true,
 		typeOptions: {
-			loadOptionsMethod: 'getBoardStages',
+			loadOptionsMethod: 'getStages',
 			loadOptionsDependsOn: ['boardId.value'],
 		},
 		default: '',
@@ -175,7 +175,7 @@ export const executeBoard: ResourceHandler = async function (this, operation, i)
 	}
 
 	if (operation === 'getCard') {
-		const contactId = (this.getNodeParameter('contactId', i) as string).trim();
+		const contactId = await resolveContactId.call(this, i);
 		const response = await contactShipApiRequest.call(
 			this,
 			'GET',
@@ -199,7 +199,7 @@ export const executeBoard: ResourceHandler = async function (this, operation, i)
 
 	if (operation === 'addContact') {
 		const body: IDataObject = {
-			entity_id: (this.getNodeParameter('contactId', i) as string).trim(),
+			entity_id: await resolveContactId.call(this, i),
 			entity_type: 'CONTACT',
 			stage_id: stageId,
 			order: position,

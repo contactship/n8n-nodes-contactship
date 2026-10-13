@@ -2,9 +2,15 @@ import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workfl
 import { NodeOperationError } from 'n8n-workflow';
 
 import { contactShipApiRequest, contactShipApiRequestAllItems } from '../../shared/transport';
-import { parseJsonParameter, splitList, toExecutionData, unwrap } from '../../shared/utils';
+import {
+	getIdParameter,
+	parseJsonParameter,
+	splitList,
+	toExecutionData,
+	unwrap,
+} from '../../shared/utils';
 import type { ResourceHandler } from './common';
-import { limitField, returnAllField } from './common';
+import { limitField, returnAllField, userLocator } from './common';
 
 const RESOURCE = 'task';
 
@@ -32,12 +38,14 @@ const sharedTaskFields: INodeProperties[] = [
 		description: 'Your own data to store on the task, as a JSON object',
 	},
 	{
-		displayName: 'Assignee Emails',
+		displayName: 'Assignee Names or IDs',
 		name: 'assignedTo',
-		type: 'string',
-		default: '',
-		placeholder: 'e.g. nathan@example.com, ana@example.com',
-		description: 'Comma-separated emails of the organization members to assign',
+		type: 'multiOptions',
+		typeOptions: { loadOptionsMethod: 'getUserEmails' },
+		default: [],
+		description:
+			'Organization members to assign. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		hint: 'With an expression, use member emails: an array, or a comma-separated text.',
 	},
 	{
 		displayName: 'Priority',
@@ -113,16 +121,13 @@ export const taskFields: INodeProperties[] = [
 		description: 'What needs to be done, at least four characters',
 		displayOptions: { show: { resource: [RESOURCE], operation: ['create'] } },
 	},
-	{
-		displayName: 'Creator Email',
-		name: 'createdBy',
-		type: 'string',
-		required: true,
-		default: '',
-		placeholder: 'e.g. nathan@example.com',
-		description: 'Email of the organization member who creates the task',
-		displayOptions: { show: { resource: [RESOURCE], operation: ['create'] } },
-	},
+	userLocator(
+		'createdBy',
+		'Creator',
+		'Organization member who creates the task',
+		{ resource: [RESOURCE], operation: ['create'] },
+		{ byEmail: true },
+	),
 	{
 		displayName: 'Type',
 		name: 'type',
@@ -240,9 +245,8 @@ function applyTaskFields(
 	if (fields.priority) body.priority = fields.priority;
 	if (fields.details) body.details = fields.details;
 	if (fields.brief) body.brief = String(fields.brief).trim();
-	if (fields.assignedTo !== undefined && fields.assignedTo !== '') {
-		body.assigned_to = splitList(fields.assignedTo);
-	}
+	const assignees = splitList(fields.assignedTo).flatMap((entry) => splitList(entry));
+	if (assignees.length) body.assigned_to = assignees;
 	const additionalData = parseJsonParameter.call(
 		this,
 		fields.additionalData,
@@ -266,7 +270,7 @@ export const executeTask: ResourceHandler = async function (this, operation, i) 
 		const body: IDataObject = {
 			brief: (this.getNodeParameter('brief', i) as string).trim(),
 			details,
-			created_by: (this.getNodeParameter('createdBy', i) as string).trim(),
+			created_by: getIdParameter.call(this, 'createdBy', i, 'Creator'),
 			type: this.getNodeParameter('type', i) as string,
 		};
 		const additionalFields = this.getNodeParameter('additionalFields', i, {}) as IDataObject;

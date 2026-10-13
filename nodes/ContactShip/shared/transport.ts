@@ -234,6 +234,8 @@ interface PaginationOptions {
 	/** Largest page the endpoint accepts. */
 	pageSize?: number;
 	itemIndex?: number;
+	/** Reads the records of one page. Defaults to the `data` array of the response. */
+	extract?: (response: IDataObject) => IDataObject[];
 }
 
 /**
@@ -244,7 +246,7 @@ export async function contactShipApiRequestAllItems(
 	this: ContactShipContext,
 	endpoint: string,
 	qs: IDataObject,
-	{ returnAll, limit = 50, pageSize = 100, itemIndex }: PaginationOptions,
+	{ returnAll, limit = 50, pageSize = 100, itemIndex, extract }: PaginationOptions,
 ): Promise<IDataObject[]> {
 	const results: IDataObject[] = [];
 	let offset = 0;
@@ -261,7 +263,11 @@ export async function contactShipApiRequestAllItems(
 			{ ...qs, limit: remaining, offset },
 			itemIndex,
 		);
-		const page = Array.isArray(response.data) ? (response.data as IDataObject[]) : [];
+		const page = extract
+			? extract(response)
+			: Array.isArray(response.data)
+				? (response.data as IDataObject[])
+				: [];
 		results.push(...page);
 		offset += page.length;
 

@@ -146,6 +146,87 @@ export function unwrap(response: IDataObject): unknown {
 	return Object.prototype.hasOwnProperty.call(response, 'data') ? response.data : response;
 }
 
+/**
+ * Returns the records of a list response. Some endpoints relay another
+ * service and wrap the list twice (`{ statusCode, data: { data: [] } }`), so
+ * this looks a few `data` levels deep for the first array.
+ */
+export function extractList(response: unknown): IDataObject[] {
+	let node: unknown = response;
+	for (let depth = 0; depth < 4; depth++) {
+		if (Array.isArray(node)) {
+			return node.filter(
+				(entry): entry is IDataObject => entry !== null && typeof entry === 'object',
+			);
+		}
+		if (node === null || typeof node !== 'object') return [];
+		node = (node as IDataObject).data;
+	}
+	return [];
+}
+
+/** Like `unwrap`, but also opens a second envelope (`{ success, data: {...} }`). */
+export function unwrapRecord(response: IDataObject): unknown {
+	let data = unwrap(response);
+	if (
+		data !== null &&
+		typeof data === 'object' &&
+		!Array.isArray(data) &&
+		Object.prototype.hasOwnProperty.call(data, 'success') &&
+		Object.prototype.hasOwnProperty.call(data, 'data')
+	) {
+		data = (data as IDataObject).data;
+	}
+	return data;
+}
+
+/** Country calling codes of the markets ContactShip numbers are usually in. */
+const CALLING_CODES: Record<string, string> = {
+	'1': 'US/Canada',
+	'1787': 'Puerto Rico',
+	'1809': 'Dominican Republic',
+	'1829': 'Dominican Republic',
+	'1849': 'Dominican Republic',
+	'1939': 'Puerto Rico',
+	'31': 'Netherlands',
+	'33': 'France',
+	'34': 'Spain',
+	'351': 'Portugal',
+	'39': 'Italy',
+	'44': 'United Kingdom',
+	'49': 'Germany',
+	'502': 'Guatemala',
+	'503': 'El Salvador',
+	'504': 'Honduras',
+	'505': 'Nicaragua',
+	'506': 'Costa Rica',
+	'507': 'Panama',
+	'51': 'Peru',
+	'52': 'Mexico',
+	'53': 'Cuba',
+	'54': 'Argentina',
+	'55': 'Brazil',
+	'56': 'Chile',
+	'57': 'Colombia',
+	'58': 'Venezuela',
+	'591': 'Bolivia',
+	'593': 'Ecuador',
+	'595': 'Paraguay',
+	'598': 'Uruguay',
+	'61': 'Australia',
+	'91': 'India',
+};
+
+/** Country of an E.164 phone number from its calling code, when it is a known one. */
+export function phoneCountry(phoneNumber: unknown): string | undefined {
+	const digits = String(phoneNumber ?? '').replace(/\D/g, '');
+	for (let length = 4; length >= 1; length--) {
+		const country = CALLING_CODES[digits.slice(0, length)];
+		if (country) return country;
+	}
+	return undefined;
+}
+
 /** Converts API data into n8n items linked to the input item. */
 export function toExecutionData(
 	this: IExecuteFunctions,
@@ -184,6 +265,21 @@ export function simplifyCall(call: IDataObject): IDataObject {
 		contact_name: contact.full_name,
 		contact_phone: contact.phone_number,
 		summary: analysis.summary ?? analysis.call_summary,
+	};
+}
+
+/** The metadata of an agent version, without its full configuration. */
+export function simplifyAgentVersion(version: IDataObject): IDataObject {
+	return {
+		id: version.id,
+		agent_id: version.agent_id,
+		version_number: version.version_number,
+		status: version.status,
+		changelog: version.changelog ?? null,
+		author_id: version.author_id ?? null,
+		voice_id: version.voice_id,
+		created_at: version.created_at,
+		published_at: version.published_at ?? null,
 	};
 }
 

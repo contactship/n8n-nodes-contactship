@@ -8,7 +8,8 @@ import type {
 import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
 import { contactShipApiRequest } from '../../shared/transport';
-import { parseJsonParameter } from '../../shared/utils';
+import { parseJsonParameter, toExecutionData, unwrap } from '../../shared/utils';
+import type { ResourceHandler } from './common';
 
 const RESOURCE = 'event';
 const MAX_EVENTS_PER_REQUEST = 100;
@@ -22,6 +23,13 @@ export const eventOperations: INodeProperties[] = [
 		displayOptions: { show: { resource: [RESOURCE] } },
 		options: [
 			{
+				name: 'Identify Session',
+				value: 'identify',
+				description:
+					'Link the session ID of a visit to a contact, so the anonymous events of that visit move to the contact',
+				action: 'Identify session',
+			},
+			{
 				name: 'Send',
 				value: 'send',
 				description:
@@ -30,6 +38,55 @@ export const eventOperations: INodeProperties[] = [
 			},
 		],
 		default: 'send',
+	},
+];
+
+const contactOptions: INodeProperties[] = [
+	{
+		displayName: 'Contact ID',
+		name: 'contactId',
+		type: 'string',
+		default: '',
+		description: 'ID of the contact in ContactShip',
+	},
+	{
+		displayName: 'Country',
+		name: 'country',
+		type: 'string',
+		default: '',
+		placeholder: 'e.g. Colombia',
+		description: 'Used if the contact has to be created',
+	},
+	{
+		displayName: 'Email',
+		name: 'email',
+		type: 'string',
+		placeholder: 'e.g. nathan@example.com',
+		default: '',
+	},
+	{
+		displayName: 'External ID',
+		name: 'externalId',
+		type: 'string',
+		default: '',
+		placeholder: 'e.g. customer-4821',
+		description: 'ID of the contact in your own system',
+	},
+	{
+		displayName: 'Name',
+		name: 'name',
+		type: 'string',
+		default: '',
+		placeholder: 'e.g. Nathan Smith',
+		description: 'Used if the contact has to be created',
+	},
+	{
+		displayName: 'Phone',
+		name: 'phone',
+		type: 'string',
+		default: '',
+		placeholder: 'e.g. +573001234567',
+		description: 'Phone number, preferably in international format',
 	},
 ];
 
@@ -62,54 +119,7 @@ export const eventFields: INodeProperties[] = [
 		description:
 			'Who the event happened to. Send at least one of contact ID, external ID, phone or email, unless you send a session ID.',
 		displayOptions: { show: { resource: [RESOURCE], operation: ['send'] } },
-		options: [
-			{
-				displayName: 'Contact ID',
-				name: 'contactId',
-				type: 'string',
-				default: '',
-				description: 'ID of the contact in ContactShip',
-			},
-			{
-				displayName: 'Country',
-				name: 'country',
-				type: 'string',
-				default: '',
-				placeholder: 'e.g. Colombia',
-				description: 'Used if the contact has to be created',
-			},
-			{
-				displayName: 'Email',
-				name: 'email',
-				type: 'string',
-				placeholder: 'e.g. nathan@example.com',
-				default: '',
-			},
-			{
-				displayName: 'External ID',
-				name: 'externalId',
-				type: 'string',
-				default: '',
-				placeholder: 'e.g. customer-4821',
-				description: 'ID of the contact in your own system',
-			},
-			{
-				displayName: 'Name',
-				name: 'name',
-				type: 'string',
-				default: '',
-				placeholder: 'e.g. Nathan Smith',
-				description: 'Used if the contact has to be created',
-			},
-			{
-				displayName: 'Phone',
-				name: 'phone',
-				type: 'string',
-				default: '',
-				placeholder: 'e.g. +573001234567',
-				description: 'Phone number, preferably in international format',
-			},
-		],
+		options: contactOptions,
 	},
 	{
 		displayName: 'Additional Fields',
@@ -238,25 +248,119 @@ export const eventFields: INodeProperties[] = [
 	},
 ];
 
+export const identifyFields: INodeProperties[] = [
+	{
+		displayName:
+			'Use it when your site learns who a visitor is (a login, a sign-up, a checkout) and has no event to send. The events sent with this session ID move to the contact within a minute. Requires the Events add-on.',
+		name: 'identifyNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: { show: { resource: [RESOURCE], operation: ['identify'] } },
+	},
+	{
+		displayName: 'Session ID',
+		name: 'sessionId',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: 'e.g. GA1.1.1234567890.1726000000',
+		description:
+			'The same session ID sent with the anonymous events, such as the Google Analytics client ID. Up to 200 characters, no spaces.',
+		displayOptions: { show: { resource: [RESOURCE], operation: ['identify'] } },
+	},
+	{
+		displayName: 'Contact',
+		name: 'contact',
+		type: 'collection',
+		placeholder: 'Add Contact Field',
+		default: {},
+		description:
+			'Who the visitor turned out to be. Fill at least one of contact ID, external ID, phone or email.',
+		displayOptions: { show: { resource: [RESOURCE], operation: ['identify'] } },
+		options: contactOptions,
+	},
+	{
+		displayName: 'Options',
+		name: 'options',
+		type: 'collection',
+		placeholder: 'Add Option',
+		default: {},
+		displayOptions: { show: { resource: [RESOURCE], operation: ['identify'] } },
+		options: [
+			{
+				displayName: 'Create Contact',
+				name: 'createContact',
+				type: 'boolean',
+				default: true,
+				description:
+					'Whether to create the contact when none matches. Turn it off to link the session only to an existing contact.',
+			},
+		],
+	},
+];
+
+const CONTACT_FIELD_MAP: Record<string, string> = {
+	contactId: 'contact_id',
+	externalId: 'external_id',
+	phone: 'phone',
+	email: 'email',
+	name: 'name',
+	country: 'country',
+};
+
+function buildContact(fields: IDataObject): IDataObject {
+	const contact: IDataObject = {};
+	for (const [parameter, apiField] of Object.entries(CONTACT_FIELD_MAP)) {
+		const value = String(fields[parameter] ?? '').trim();
+		if (value) contact[apiField] = value;
+	}
+	return contact;
+}
+
+/** Identify Session, one request per input item. */
+export const executeEvent: ResourceHandler = async function (this, operation, i) {
+	if (operation === 'identify') {
+		const sessionId = (this.getNodeParameter('sessionId', i) as string).trim();
+		if (!sessionId || /\s/.test(sessionId)) {
+			throw new NodeOperationError(this.getNode(), "'Session ID' is empty or has spaces", {
+				description: 'Use the session ID exactly as it was sent with the events.',
+				itemIndex: i,
+			});
+		}
+		const contact = buildContact(this.getNodeParameter('contact', i, {}) as IDataObject);
+		if (!contact.contact_id && !contact.external_id && !contact.phone && !contact.email) {
+			throw new NodeOperationError(this.getNode(), 'The contact has no identifier', {
+				description: "Fill at least one of contact ID, external ID, phone or email in 'Contact'.",
+				itemIndex: i,
+			});
+		}
+		const options = this.getNodeParameter('options', i, {}) as IDataObject;
+		const body: IDataObject = { session_id: sessionId, contact };
+		if (options.createContact === false) body.create_contact = false;
+		const response = await contactShipApiRequest.call(
+			this,
+			'POST',
+			'/v1/identify',
+			body,
+			undefined,
+			i,
+		);
+		return toExecutionData.call(this, unwrap(response), i);
+	}
+
+	throw new NodeOperationError(
+		this.getNode(),
+		`The operation '${operation}' is not supported for events`,
+		{ itemIndex: i },
+	);
+};
+
 function buildEvent(this: IExecuteFunctions, itemIndex: number): IDataObject {
 	const event: IDataObject = {
 		event_name: (this.getNodeParameter('eventName', itemIndex) as string).trim(),
 	};
 
-	const contactFields = this.getNodeParameter('contact', itemIndex, {}) as IDataObject;
-	const contact: IDataObject = {};
-	const contactMap: Record<string, string> = {
-		contactId: 'contact_id',
-		externalId: 'external_id',
-		phone: 'phone',
-		email: 'email',
-		name: 'name',
-		country: 'country',
-	};
-	for (const [parameter, apiField] of Object.entries(contactMap)) {
-		const value = String(contactFields[parameter] ?? '').trim();
-		if (value) contact[apiField] = value;
-	}
+	const contact = buildContact(this.getNodeParameter('contact', itemIndex, {}) as IDataObject);
 	if (Object.keys(contact).length) event.contact = contact;
 
 	const additionalFields = this.getNodeParameter('additionalFields', itemIndex, {}) as IDataObject;

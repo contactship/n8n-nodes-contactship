@@ -8,42 +8,42 @@ import {
 } from '../../shared/transport';
 import { getIdParameter, normalizePhoneNumber, toExecutionData, unwrap } from '../../shared/utils';
 import type { ExecutionCache, ResourceHandler } from './common';
-import { contactIdField, limitField, returnAllField, sortField } from './common';
+import {
+	contactIdField,
+	getContactReference,
+	getMappedValues,
+	limitField,
+	resolveContactId,
+	returnAllField,
+	sortField,
+	userLocator,
+} from './common';
 
 const RESOURCE = 'contact';
 
-const contactPropertiesOption: INodeProperties = {
-	displayName: 'Contact Properties',
-	name: 'contactProperties',
-	type: 'fixedCollection',
-	placeholder: 'Add Property',
-	default: {},
-	typeOptions: { multipleValues: true },
-	description: 'Values for the contact properties defined in your organization',
-	options: [
-		{
-			displayName: 'Property',
-			name: 'property',
-			values: [
-				{
-					displayName: 'Property Name or ID',
-					name: 'field',
-					type: 'options',
-					typeOptions: { loadOptionsMethod: 'getContactProperties' },
-					default: '',
-					description:
-						'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
-				},
-				{
-					displayName: 'Value',
-					name: 'value',
-					type: 'string',
-					default: '',
-				},
-			],
+function contactPropertiesField(operations: string[], description: string): INodeProperties {
+	return {
+		displayName: 'Contact Properties',
+		name: 'contactProperties',
+		type: 'resourceMapper',
+		noDataExpression: true,
+		default: { mappingMode: 'defineBelow', value: null },
+		description,
+		typeOptions: {
+			resourceMapper: {
+				resourceMapperMethod: 'getContactPropertyFields',
+				mode: 'add',
+				fieldWords: { singular: 'property', plural: 'properties' },
+				addAllFields: false,
+				multiKeyMatch: false,
+				supportAutoMap: false,
+				noFieldsError:
+					"Your organization has no contact properties yet. Define them in ContactShip, or use 'Custom Properties'.",
+			},
 		},
-	],
-};
+		displayOptions: { show: { resource: [RESOURCE], operation: operations } },
+	};
+}
 
 const customPropertiesOption: INodeProperties = {
 	displayName: 'Custom Properties',
@@ -227,55 +227,19 @@ export const contactFields: INodeProperties[] = [
 		placeholder: 'Add Field',
 		default: {},
 		displayOptions: { show: { resource: [RESOURCE], operation: ['create', 'upsert'] } },
-		options: [contactPropertiesOption, customPropertiesOption, emailOption],
+		options: [customPropertiesOption, emailOption],
 	},
-
-	// Get
-	{
-		displayName: 'Find By',
-		name: 'identifierType',
-		type: 'options',
-		options: [
-			{ name: 'Email', value: 'email' },
-			{ name: 'ID', value: 'id' },
-			{ name: 'Phone Number', value: 'phone_number' },
-		],
-		default: 'id',
-		description: 'How to identify the contact',
-		displayOptions: { show: { resource: [RESOURCE], operation: ['get'] } },
-	},
-	{
-		...contactIdField(RESOURCE, ['get']),
-		displayOptions: { show: { resource: [RESOURCE], operation: ['get'], identifierType: ['id'] } },
-	},
-	{
-		displayName: 'Phone Number',
-		name: 'phoneNumber',
-		type: 'string',
-		required: true,
-		default: '',
-		placeholder: 'e.g. +12125551234',
-		displayOptions: {
-			show: { resource: [RESOURCE], operation: ['get'], identifierType: ['phone_number'] },
-		},
-	},
-	{
-		displayName: 'Email',
-		name: 'email',
-		type: 'string',
-		required: true,
-		default: '',
-		placeholder: 'e.g. nathan@example.com',
-		displayOptions: {
-			show: { resource: [RESOURCE], operation: ['get'], identifierType: ['email'] },
-		},
-	},
+	contactPropertiesField(
+		['create', 'upsert'],
+		'Values for the contact properties defined in your organization',
+	),
 
 	// Operations on one contact
 	contactIdField(RESOURCE, [
 		'addTag',
 		'createComment',
 		'delete',
+		'get',
 		'getCallHistory',
 		'getComments',
 		'getTags',
@@ -337,18 +301,13 @@ export const contactFields: INodeProperties[] = [
 		description: 'Who the comment is shown as written by',
 		displayOptions: { show: { resource: [RESOURCE], operation: ['createComment'] } },
 	},
-	{
-		displayName: 'Author Email',
-		name: 'createdBy',
-		type: 'string',
-		required: true,
-		default: '',
-		placeholder: 'e.g. nathan@example.com',
-		description: 'Email of the organization member who writes the comment',
-		displayOptions: {
-			show: { resource: [RESOURCE], operation: ['createComment'], createdByType: ['USER'] },
-		},
-	},
+	userLocator(
+		'createdBy',
+		'Author',
+		'Organization member who writes the comment',
+		{ resource: [RESOURCE], operation: ['createComment'], createdByType: ['USER'] },
+		{ byEmail: true },
+	),
 
 	// Get Many
 	returnAllField(RESOURCE, 'getAll'),
@@ -399,11 +358,6 @@ export const contactFields: INodeProperties[] = [
 		displayOptions: { show: { resource: [RESOURCE], operation: ['update'] } },
 		options: [
 			{
-				...contactPropertiesOption,
-				description:
-					"Replaces all the property values of the contact. To change only some, use the 'Update Properties' operation.",
-			},
-			{
 				displayName: 'Country',
 				name: 'country',
 				type: 'string',
@@ -433,11 +387,16 @@ export const contactFields: INodeProperties[] = [
 		],
 	},
 
+	contactPropertiesField(
+		['update'],
+		"Values for the contact properties defined in your organization. They replace all the property values of the contact; to change only some, use 'Update Properties'.",
+	),
+
 	// Update Properties
-	{
-		...contactPropertiesOption,
-		displayOptions: { show: { resource: [RESOURCE], operation: ['updateProperties'] } },
-	},
+	contactPropertiesField(
+		['updateProperties'],
+		'Values for the contact properties defined in your organization. Other properties of the contact are kept.',
+	),
 	{
 		...customPropertiesOption,
 		displayOptions: { show: { resource: [RESOURCE], operation: ['updateProperties'] } },
@@ -486,36 +445,29 @@ async function getPropertyTypes(
 	return cache.contactProperties;
 }
 
-/** Builds the API's `additional_data` array from the two property collections. */
+/** Builds the API's `additional_data` array from the property mapper and the custom properties. */
 async function buildAdditionalData(
 	this: IExecuteFunctions,
-	source: IDataObject,
+	customProperties: IDataObject | undefined,
 	cache: ExecutionCache,
 	itemIndex: number,
 ): Promise<IDataObject[]> {
 	const additionalData: IDataObject[] = [];
 
-	const predefined =
-		((source.contactProperties as IDataObject | undefined)?.property as
-			| IDataObject[]
-			| undefined) ?? [];
-	if (predefined.length) {
+	const { values } = getMappedValues.call(this, 'contactProperties', itemIndex);
+	if (Object.keys(values).length) {
 		const definitions = await getPropertyTypes.call(this, cache, itemIndex);
-		for (const entry of predefined) {
-			const field = String(entry.field ?? '').trim();
-			if (!field) continue;
+		for (const [field, value] of Object.entries(values)) {
 			const definition = definitions.find((property) => property.field === field);
 			additionalData.push({
 				type: toAdditionalDataType(definition?.type),
 				field,
-				value: String(entry.value ?? ''),
+				value: String(value),
 			});
 		}
 	}
 
-	const custom =
-		((source.customProperties as IDataObject | undefined)?.property as IDataObject[] | undefined) ??
-		[];
+	const custom = (customProperties?.property as IDataObject[] | undefined) ?? [];
 	for (const entry of custom) {
 		const field = String(entry.field ?? '').trim();
 		if (!field) continue;
@@ -529,14 +481,12 @@ async function buildAdditionalData(
 	return additionalData;
 }
 
-function contactPath(this: IExecuteFunctions, itemIndex: number, suffix = ''): string {
-	const contactId = (this.getNodeParameter('contactId', itemIndex) as string).trim();
-	if (!contactId) {
-		throw new NodeOperationError(this.getNode(), "The 'Contact ID' parameter is empty", {
-			description: 'Enter the ID of the contact, for example from a previous ContactShip node.',
-			itemIndex,
-		});
-	}
+async function contactPath(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	suffix = '',
+): Promise<string> {
+	const contactId = await resolveContactId.call(this, itemIndex);
 	return `/v1/contacts/${encodeURIComponent(contactId)}${suffix}`;
 }
 
@@ -555,7 +505,12 @@ export const executeContact: ResourceHandler = async function (this, operation, 
 			country: (this.getNodeParameter('country', i) as string).trim(),
 		};
 		if (additionalFields.email) body.email = String(additionalFields.email).trim();
-		const additionalData = await buildAdditionalData.call(this, additionalFields, cache, i);
+		const additionalData = await buildAdditionalData.call(
+			this,
+			additionalFields.customProperties as IDataObject | undefined,
+			cache,
+			i,
+		);
 		if (additionalData.length) body.additional_data = additionalData;
 
 		if (operation === 'upsert') {
@@ -610,20 +565,7 @@ export const executeContact: ResourceHandler = async function (this, operation, 
 	}
 
 	if (operation === 'get') {
-		const identifierType = this.getNodeParameter('identifierType', i) as string;
-		let identifier: string;
-		if (identifierType === 'phone_number') {
-			identifier = normalizePhoneNumber.call(
-				this,
-				this.getNodeParameter('phoneNumber', i) as string,
-				'Phone Number',
-				i,
-			);
-		} else if (identifierType === 'email') {
-			identifier = (this.getNodeParameter('email', i) as string).trim();
-		} else {
-			identifier = (this.getNodeParameter('contactId', i) as string).trim();
-		}
+		const { identifier, identifierType } = getContactReference.call(this, i);
 		const response = await contactShipApiRequest.call(
 			this,
 			'GET',
@@ -668,7 +610,12 @@ export const executeContact: ResourceHandler = async function (this, operation, 
 				i,
 			);
 		}
-		const additionalData = await buildAdditionalData.call(this, updateFields, cache, i);
+		const additionalData = await buildAdditionalData.call(
+			this,
+			updateFields.customProperties as IDataObject | undefined,
+			cache,
+			i,
+		);
 		if (additionalData.length) body.additional_data = additionalData;
 		if (!Object.keys(body).length) {
 			throw new NodeOperationError(this.getNode(), 'There is nothing to update', {
@@ -679,7 +626,7 @@ export const executeContact: ResourceHandler = async function (this, operation, 
 		const response = await contactShipApiRequest.call(
 			this,
 			'PATCH',
-			contactPath.call(this, i),
+			await contactPath.call(this, i),
 			body,
 			undefined,
 			i,
@@ -688,11 +635,12 @@ export const executeContact: ResourceHandler = async function (this, operation, 
 	}
 
 	if (operation === 'updateProperties') {
-		const source: IDataObject = {
-			contactProperties: this.getNodeParameter('contactProperties', i, {}),
-			customProperties: this.getNodeParameter('customProperties', i, {}),
-		};
-		const additionalData = await buildAdditionalData.call(this, source, cache, i);
+		const additionalData = await buildAdditionalData.call(
+			this,
+			this.getNodeParameter('customProperties', i, {}) as IDataObject,
+			cache,
+			i,
+		);
 		if (!additionalData.length) {
 			throw new NodeOperationError(this.getNode(), 'There are no properties to update', {
 				description: "Add at least one value in 'Contact Properties' or 'Custom Properties'.",
@@ -702,7 +650,7 @@ export const executeContact: ResourceHandler = async function (this, operation, 
 		const response = await contactShipApiRequest.call(
 			this,
 			'PATCH',
-			contactPath.call(this, i, '/additional-data'),
+			await contactPath.call(this, i, '/additional-data'),
 			{ additional_data: additionalData },
 			undefined,
 			i,
@@ -714,7 +662,7 @@ export const executeContact: ResourceHandler = async function (this, operation, 
 		await contactShipApiRequest.call(
 			this,
 			'DELETE',
-			contactPath.call(this, i),
+			await contactPath.call(this, i),
 			undefined,
 			undefined,
 			i,
@@ -726,7 +674,7 @@ export const executeContact: ResourceHandler = async function (this, operation, 
 		const response = await contactShipApiRequest.call(
 			this,
 			'GET',
-			contactPath.call(this, i, '/call-history'),
+			await contactPath.call(this, i, '/call-history'),
 			undefined,
 			undefined,
 			i,
@@ -738,7 +686,7 @@ export const executeContact: ResourceHandler = async function (this, operation, 
 		const response = await contactShipApiRequest.call(
 			this,
 			'GET',
-			contactPath.call(this, i, '/comments'),
+			await contactPath.call(this, i, '/comments'),
 			undefined,
 			undefined,
 			i,
@@ -754,7 +702,7 @@ export const executeContact: ResourceHandler = async function (this, operation, 
 		const response = await contactShipApiRequest.call(
 			this,
 			'GET',
-			contactPath.call(this, i, '/tags'),
+			await contactPath.call(this, i, '/tags'),
 			undefined,
 			undefined,
 			i,
@@ -767,7 +715,7 @@ export const executeContact: ResourceHandler = async function (this, operation, 
 		const response = await contactShipApiRequest.call(
 			this,
 			operation === 'addTag' ? 'POST' : 'DELETE',
-			contactPath.call(this, i, `/tags/${tagId}`),
+			await contactPath.call(this, i, `/tags/${tagId}`),
 			undefined,
 			undefined,
 			i,
@@ -782,11 +730,11 @@ export const executeContact: ResourceHandler = async function (this, operation, 
 		const createdByType = this.getNodeParameter('createdByType', i) as string;
 		const body: IDataObject = {
 			content: this.getNodeParameter('content', i) as string,
-			contact_id: (this.getNodeParameter('contactId', i) as string).trim(),
+			contact_id: await resolveContactId.call(this, i),
 			created_by_type: createdByType,
 		};
 		if (createdByType === 'USER') {
-			body.created_by = (this.getNodeParameter('createdBy', i) as string).trim();
+			body.created_by = getIdParameter.call(this, 'createdBy', i, 'Author');
 		}
 		const response = await contactShipApiRequest.call(
 			this,
