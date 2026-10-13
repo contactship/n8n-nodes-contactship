@@ -1,0 +1,14 @@
+{
+	"node": "n8n-nodes-contactship.contactShipTrigger",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Communication", "Sales"],
+	"alias": ["post-call webhook", "AI phone call", "voice agent", "call result"],
+	"resources": {
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/contactship/n8n-nodes-contactship#contactship-trigger"
+			}
+		]
+	}
+}

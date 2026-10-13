@@ -1,0 +1,19 @@
+{
+	"node": "n8n-nodes-contactship.contactShip",
+	"nodeVersion": "2.0",
+	"codexVersion": "1.0",
+	"categories": ["Communication", "Sales"],
+	"alias": ["AI phone call", "voice agent", "WhatsApp", "contact center", "CRM"],
+	"resources": {
+		"credentialDocumentation": [
+			{
+				"url": "https://github.com/contactship/n8n-nodes-contactship#credentials"
+			}
+		],
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/contactship/n8n-nodes-contactship#readme"
+			}
+		]
+	}
+}
