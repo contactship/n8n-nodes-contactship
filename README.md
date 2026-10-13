@@ -74,7 +74,7 @@ Phone numbers must be in international format (`+12125551234`). The node removes
 | Update | Changes name, phone number, country, email or properties. Properties sent here replace all the contact's properties. | `PATCH /v1/contacts/{contactId}` |
 | Update Properties | Changes property values (additional data) of a contact. | `PATCH /v1/contacts/{contactId}/additional-data` |
 | Delete | Deletes a contact permanently. | `DELETE /v1/contacts/{contactId}` |
-| Get Call History | Retrieves the calls of a contact. | `GET /v1/contacts/{contactId}/call-history` |
+| Get Call History | Retrieves the calls of a contact, one item per call. | `GET /v1/contacts/{contactId}/call-history` |
 | Get Comments | Retrieves the comments of a contact, one item per comment. | `GET /v1/contacts/{contactId}/comments` |
 | Create Comment | Adds a comment to the contact's activity, written as an organization member (picked from the list or by email), AI, system or automation. | `POST /v1/comments` |
 | Get Tags | Retrieves the tags assigned to a contact. | `GET /v1/contacts/{contactId}/tags` |

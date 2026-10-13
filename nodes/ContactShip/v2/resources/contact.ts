@@ -679,7 +679,13 @@ export const executeContact: ResourceHandler = async function (this, operation, 
 			undefined,
 			i,
 		);
-		return toExecutionData.call(this, unwrap(response), i);
+		// The API answers { contact, history: { call_attempts, calls, last_call } }: return one item per call.
+		const data = unwrap(response) as IDataObject | IDataObject[] | undefined;
+		const history = (Array.isArray(data) ? undefined : data?.history) as IDataObject | undefined;
+		const calls = Array.isArray(data)
+			? data
+			: ((history?.calls as IDataObject[] | undefined) ?? []);
+		return toExecutionData.call(this, calls, i);
 	}
 
 	if (operation === 'getComments') {
