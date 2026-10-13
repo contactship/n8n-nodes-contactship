@@ -462,7 +462,8 @@ export const v1Properties: INodeProperties[] = [
 		typeOptions: { rows: 4 },
 		default: '',
 		displayOptions: show('contact', ['create']),
-		description: 'Description or notes about the contact',
+		description:
+			'No longer used: the ContactShip API does not accept a description, so this value is not sent',
 	},
 	{
 		displayName: 'Additional Fields',
@@ -559,7 +560,8 @@ export const v1Properties: INodeProperties[] = [
 				type: 'string',
 				typeOptions: { rows: 4 },
 				default: '',
-				description: 'New description or notes about the contact',
+				description:
+					'No longer used: the ContactShip API does not accept a description, so this value is not sent',
 			},
 			{
 				displayName: 'Email',
@@ -716,7 +718,7 @@ export const v1Properties: INodeProperties[] = [
 				name: 'search',
 				type: 'string',
 				default: '',
-				description: 'Search for tags containing this text',
+				description: 'Tags whose name contains this text',
 			},
 		],
 	},

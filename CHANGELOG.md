@@ -44,6 +44,7 @@ Rebuilt with the official n8n community node tooling (`@n8n/node-cli`) to meet t
 - All texts are in English.
 - ContactShip Trigger: when a call has no `call_result` (for example web calls without a contact), the output is chosen from the voicemail detection, the call status and the disconnection reason; anything unclear still goes to **Other**. Unauthorized requests now get a `401`/`403` response instead of hanging. The webhook path is unchanged, and workflows created with 0.x keep trigger version 1 and its five outputs.
 - Node version 1: Add Comment sends the author type the API now requires, the tag operations show the contact field they need, and the default limit of Phone Number → Get Many is 50.
+- Node version 1: Contact Create and Update no longer send Description or the `source` marker of contact properties, and Get All Tags sends Search as the `name` filter. The API now rejects those fields with a 400, so workflows that used them failed.
 
 ### Removed
 

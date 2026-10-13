@@ -56,11 +56,11 @@ function buildContactAdditionalData(
 				itemIndex,
 			});
 		}
+		// 0.x also sent `source: 'organization-property'`; the API now rejects unknown fields.
 		additionalData.push({
 			type: definition.type,
 			field: definition.field,
 			value: property.value,
-			source: 'organization-property',
 		});
 	}
 
@@ -87,14 +87,13 @@ async function executeContactV1(
 			assertE164.call(this, phoneNumber, 'contact', i);
 			const additionalFields = this.getNodeParameter('additionalFields', i, {}) as IDataObject;
 			const email = this.getNodeParameter('email', i, '') as string;
-			const description = this.getNodeParameter('description', i, '') as string;
+			// 'Description' is no longer accepted by the API (it answers 400), so it is not sent.
 			const body: IDataObject = {
 				full_name: this.getNodeParameter('fullName', i) as string,
 				phone_number: phoneNumber,
 				country: this.getNodeParameter('country', i) as string,
 			};
 			if (email) body.email = email;
-			if (description) body.description = description;
 			const additionalData = buildContactAdditionalData.call(this, additionalFields, i);
 			if (additionalData.length) body.additional_data = additionalData;
 			return await contactShipApiRequest.call(this, 'POST', '/v1/contacts', body, undefined, i);
@@ -124,7 +123,6 @@ async function executeContactV1(
 			const body: IDataObject = {};
 			if (updateFields.full_name) body.full_name = updateFields.full_name;
 			if (updateFields.email) body.email = updateFields.email;
-			if (updateFields.description) body.description = updateFields.description;
 			const additionalData = buildContactAdditionalData.call(this, updateFields, i);
 			if (additionalData.length) body.additional_data = additionalData;
 			return await contactShipApiRequest.call(this, 'PATCH', contactPath(), body, undefined, i);
@@ -164,15 +162,12 @@ async function executeContactV1(
 				undefined,
 				i,
 			);
-		case 'getAllTags':
-			return await contactShipApiRequest.call(
-				this,
-				'GET',
-				'/v1/tags',
-				undefined,
-				this.getNodeParameter('options', i, {}) as IDataObject,
-				i,
-			);
+		case 'getAllTags': {
+			// The API filters tags by `name`; 0.x sent `search`, which it now rejects.
+			const { search, ...options } = this.getNodeParameter('options', i, {}) as IDataObject;
+			if (search) options.name = search;
+			return await contactShipApiRequest.call(this, 'GET', '/v1/tags', undefined, options, i);
+		}
 		case 'addTagToContact':
 		case 'removeTagFromContact': {
 			const tagId = encodeURIComponent(this.getNodeParameter('tagId', i) as string);
