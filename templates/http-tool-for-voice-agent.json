@@ -1,0 +1,95 @@
+{
+  "name": "Answer a ContactShip voice agent tool call with n8n",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## HTTP tool for a voice agent\n\nDuring a call, a ContactShip voice agent can call this workflow as a custom tool, for example to look up an order. The agent sends the tool arguments and reads the JSON that comes back.\n\n**Setup**\n1. Activate the workflow and copy the **Production URL** of **Tool Call**.\n2. In ContactShip, open the voice agent → **Tools**, add a custom (HTTP) tool named `lookup_order` with the parameter `order_number`, paste the URL and publish the agent. You can also add it with the ContactShip node: **Agent Version → Update Draft → Tools (JSON)**, then **Publish**.\n3. In **Look Up Order**, replace the sample result with a lookup in your system.\n\nLive calls do not forward the tool's headers, so do not add header authentication to **Tool Call**: keep the URL private instead. Reply within a few seconds; the caller is waiting.",
+        "height": 500,
+        "width": 540
+      },
+      "id": "aca1b9fd-8216-465b-93e1-bca93dda2bcc",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -380
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "contactship-tool-lookup-order",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "717eca92-2f3a-4882-b452-9f6298001c4a",
+      "name": "Tool Call",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "cbe642f0-ae74-4db8-976f-44821a8b89be"
+    },
+    {
+      "parameters": {
+        "jsCode": "// A ContactShip voice agent calls this tool during a call.\n// Live request body: { call: { call_id, agent_id, contactship_llm_dynamic_variables,\n// call_status, call_type, from_number, to_number }, tool_name, args: { ... } }.\n// The 'Test endpoint' button in ContactShip sends only the arguments, at the root.\nconst request = $input.first().json.body ?? {};\nconst args = request.args ?? request;\nconst orderNumber = String(args.order_number ?? '').trim();\n\n// Replace this with a lookup in your own system. A call can run the tool more\n// than once, so do not repeat side effects only because the call ID is the same.\nif (!orderNumber) {\n  return [{ json: { found: false, reason: 'No order number was given' } }];\n}\n\nconst result = {\n  found: true,\n  order_number: orderNumber,\n  status: 'in_transit',\n  estimated_delivery: '2026-10-15',\n};\n\n// Return the JSON the agent needs; it reads it and answers the caller.\nreturn [{ json: result }];"
+      },
+      "id": "a8747832-65cf-40be-a5fd-95d9e6cbf558",
+      "name": "Look Up Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      },
+      "id": "13efd8df-b3bf-4d05-bbd6-a2bbdf3cd212",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Look Up Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Look Up Order": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

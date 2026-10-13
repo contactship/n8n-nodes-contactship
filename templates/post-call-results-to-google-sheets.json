@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Log every call result in Google Sheets\n\nEach time a ContactShip voice agent finishes a call, the result is added as a row: outcome, contact, duration, summary, sentiment, the fields your agent extracts and the recording.\n\n**Setup**\n1. Create a sheet with the columns: Date, Call ID, Result, Contact, Phone, Duration (s), Summary, Sentiment, Successful, Extracted Data, Recording, Agent.\n2. In **Add Row**, connect Google Sheets and pick the document and sheet.\n3. Activate the workflow and copy the **Production URL** of **Call Finished**.\n4. In ContactShip, open your voice agent → **Advanced → Post-call**, paste the URL as webhook and publish.\n\nThe trigger has one output per result (Answered, Voicemail, No Answer, Failed, Other). Here all of them go to the same sheet; connect them to different nodes to handle each case.",
+        "content": "## Log every call result in Google Sheets\n\nEach time a ContactShip voice agent finishes a call, the result is added as a row: outcome, contact, duration, summary, sentiment, the fields your agent extracts and the recording.\n\n**Setup**\n1. Create a sheet with the columns: Date, Call ID, Result, Contact, Phone, Duration (s), Summary, Sentiment, Successful, Extracted Data, Recording, Agent.\n2. In **Add Row**, connect Google Sheets and pick the document and sheet.\n3. Activate the workflow and copy the **Production URL** of **Call Finished**.\n4. In ContactShip, open your voice agent → **Advanced → Post-call**, paste the URL as webhook and publish.\n\nThe trigger has one output per result (Answered, Voicemail, No Answer, Failed, Other). Here all of them go to the same sheet; connect them to different nodes to handle each case. Its last output, Follow-Up Closed, is for text-agent follow-ups and is not used here.",
         "height": 460,
         "width": 520
       },
@@ -21,7 +21,7 @@
       "id": "52fe8659-7c38-561c-82a1-c05a72aa4af7",
       "name": "Call Finished",
       "type": "n8n-nodes-contactship.contactShipTrigger",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [
         0,
         200

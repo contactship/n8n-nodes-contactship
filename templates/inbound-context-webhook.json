@@ -1,0 +1,95 @@
+{
+  "name": "Give a ContactShip voice agent caller context before an inbound call",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Caller context before an inbound call\n\nBefore a ContactShip voice agent answers an inbound call, ContactShip sends the caller's number and contact to this workflow. The JSON object it returns becomes variables the agent can use in its prompt, such as `{{caller_name}}`.\n\n**Setup**\n1. Activate the workflow and copy the **Production URL** of **Inbound Call**.\n2. In ContactShip, open the voice agent → **Advanced → Inbound context → Custom webhook**, paste the URL and publish the agent.\n3. In **Build Context**, replace the sample values with a lookup in your system.\n4. Write the keys in the agent's prompt, for example: *The caller is {{caller_name}}.*\n\nAnswer fast: the call waits for this response, and on a timeout it goes on without the variables. Keep the URL private; it is the only secret of this webhook.",
+        "height": 480,
+        "width": 540
+      },
+      "id": "17680249-e513-49c3-a410-289c7e9102f7",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "contactship-inbound-context",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "de48a34d-097c-42be-aa98-0df509587ae5",
+      "name": "Inbound Call",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "600353d5-ad57-4003-bcd6-aa0c3a7f9efd"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ContactShip asks for context right before an inbound call.\n// Request body: { call: { direction, from_number, to_number }, agent_id,\n// organization_id, contact: { id, full_name, email } or null for new callers }.\nconst request = $input.first().json.body ?? {};\nconst contact = request.contact ?? null;\nconst callerPhone = request.call?.from_number ?? '';\n\n// Replace this with a lookup in your own system (CRM, database, Google Sheets...),\n// for example by contact.id or callerPhone. Keep it fast: the call waits for it.\nconst context = {\n  caller_name: contact?.full_name ?? '',\n  caller_phone: callerPhone,\n  is_known_customer: Boolean(contact?.id),\n  // balance: 125,\n  // order_status: 'ready for pickup',\n};\n\n// Return only what the agent needs, as a flat object (under 8,000 characters).\n// Do not use the reserved keys contact_data, current_day_time or timezone.\nreturn [{ json: context }];"
+      },
+      "id": "cb3f9e3b-e64b-4d6c-ad40-aeddbe4ed993",
+      "name": "Build Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      },
+      "id": "292501ab-0ec8-4a32-9498-0bc21f15e8bb",
+      "name": "Return Context",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Inbound Call": {
+      "main": [
+        [
+          {
+            "node": "Build Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Context": {
+      "main": [
+        [
+          {
+            "node": "Return Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

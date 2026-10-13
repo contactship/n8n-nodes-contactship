@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Send a WhatsApp template to new rows\n\nWhen a row is added to your Google Sheet, the contact is created (or updated) in ContactShip and receives an approved WhatsApp template.\n\n**Setup**\n1. Your sheet needs the columns **Name**, **Phone** (international format, e.g. +5215512345678) and **Country**.\n2. In **New Row**, connect Google Sheets and pick the document and sheet.\n3. In **Send Template**, pick the WhatsApp **Channel** and an approved **Template**. Map its placeholders in **Body Variables**, in order.\n4. Activate the workflow.\n\nTemplates are required to start a WhatsApp conversation; free text only works within 24 hours of the contact's last message.",
+        "content": "## Send a WhatsApp template to new rows\n\nWhen a row is added to your Google Sheet, the contact is created (or updated) in ContactShip and receives an approved WhatsApp template.\n\n**Setup**\n1. Your sheet needs the columns **Name**, **Phone** (international format, e.g. +5215512345678) and **Country**.\n2. In **New Row**, connect Google Sheets and pick the document and sheet.\n3. In **Send Template**, pick the WhatsApp **Channel** and an approved **Template**. Its variables appear in **Template Variables**: map the first one to `{{ $('New Row').item.json.Name }}`, or to any other column.\n4. Activate the workflow.\n\nTemplates are required to start a WhatsApp conversation; free text only works within 24 hours of the contact's last message.",
         "height": 420,
         "width": 520
       },
@@ -74,14 +74,16 @@
           "value": "",
           "mode": "list"
         },
-        "contactId": "={{ $json.id }}",
+        "contactId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
         "templateName": "",
-        "bodyVariables": {
-          "variable": [
-            {
-              "value": "={{ $('New Row').item.json.Name }}"
-            }
-          ]
+        "variablesMode": "map",
+        "templateVariables": {
+          "mappingMode": "defineBelow",
+          "value": null
         },
         "options": {}
       },
