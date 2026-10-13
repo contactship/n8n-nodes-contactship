@@ -167,6 +167,7 @@ export const whatsappFields: INodeProperties[] = [
 			resourceMapper: {
 				resourceMapperMethod: 'getTemplateFields',
 				mode: 'add',
+				valuesLabel: 'Template Variables',
 				fieldWords: { singular: 'variable', plural: 'variables' },
 				addAllFields: true,
 				multiKeyMatch: false,

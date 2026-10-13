@@ -33,6 +33,7 @@ function contactPropertiesField(operations: string[], description: string): INod
 			resourceMapper: {
 				resourceMapperMethod: 'getContactPropertyFields',
 				mode: 'add',
+				valuesLabel: 'Contact Properties',
 				fieldWords: { singular: 'property', plural: 'properties' },
 				addAllFields: false,
 				multiKeyMatch: false,

@@ -94,6 +94,7 @@ const agentVariablesField: INodeProperties = {
 		resourceMapper: {
 			resourceMapperMethod: 'getAgentVariables',
 			mode: 'add',
+			valuesLabel: 'Agent Variables',
 			fieldWords: { singular: 'variable', plural: 'variables' },
 			addAllFields: true,
 			multiKeyMatch: false,
