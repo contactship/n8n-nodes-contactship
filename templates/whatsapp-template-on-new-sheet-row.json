@@ -1,0 +1,129 @@
+{
+  "name": "Send a WhatsApp template with ContactShip when a Google Sheets row is added",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Send a WhatsApp template to new rows\n\nWhen a row is added to your Google Sheet, the contact is created (or updated) in ContactShip and receives an approved WhatsApp template.\n\n**Setup**\n1. Your sheet needs the columns **Name**, **Phone** (international format, e.g. +5215512345678) and **Country**.\n2. In **New Row**, connect Google Sheets and pick the document and sheet.\n3. In **Send Template**, pick the WhatsApp **Channel** and an approved **Template**. Map its placeholders in **Body Variables**, in order.\n4. Activate the workflow.\n\nTemplates are required to start a WhatsApp conversation; free text only works within 24 hours of the contact's last message.",
+        "height": 420,
+        "width": 520
+      },
+      "id": "616f3b87-8ad9-57d2-b672-eb18e1e7f00b",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -340
+      ]
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "event": "rowAdded",
+        "options": {}
+      },
+      "id": "93637a98-05fc-5cb9-bb92-172786b40b5f",
+      "name": "New Row",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "upsert",
+        "phoneNumber": "={{ $json.Phone }}",
+        "fullName": "={{ $json.Name }}",
+        "country": "={{ $json.Country }}",
+        "additionalFields": {}
+      },
+      "id": "dcefebd4-7a39-5815-ac43-3e22184aa332",
+      "name": "Create or Update Contact",
+      "type": "n8n-nodes-contactship.contactShip",
+      "typeVersion": 2,
+      "position": [
+        260,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "whatsapp",
+        "operation": "sendTemplate",
+        "channelId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "contactId": "={{ $json.id }}",
+        "templateName": "",
+        "bodyVariables": {
+          "variable": [
+            {
+              "value": "={{ $('New Row').item.json.Name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3aae7677-2c97-56ca-baf9-a6ad4a6a97cf",
+      "name": "Send Template",
+      "type": "n8n-nodes-contactship.contactShip",
+      "typeVersion": 2,
+      "position": [
+        520,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "New Row": {
+      "main": [
+        [
+          {
+            "node": "Create or Update Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create or Update Contact": {
+      "main": [
+        [
+          {
+            "node": "Send Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "name": "Daily Slack summary of yesterday's ContactShip calls",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Daily summary of yesterday's calls in Slack\n\nEvery morning, this workflow lists yesterday's ContactShip calls and posts the totals by result, the minutes used and the summaries of up to five answered calls.\n\n**Setup**\n1. Add your ContactShip credential.\n2. In **Post to Slack**, connect Slack and pick the channel.\n3. Adjust the hour in **Every Morning** and the workflow time zone in the workflow settings.\n4. Activate the workflow.",
+        "height": 340,
+        "width": 520
+      },
+      "id": "616f3b87-8ad9-57d2-b672-eb18e1e7f00b",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "67362dc8-7fcf-5475-b3b1-64a46c7661e2",
+      "name": "Every Morning",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "call",
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {
+          "dateFrom": "={{ $today.minus({ days: 1 }).toISO() }}",
+          "dateTo": "={{ $today.toISO() }}"
+        },
+        "simplify": true,
+        "sort": {
+          "order": "asc"
+        }
+      },
+      "id": "df71e549-365a-50bc-9fba-9ce9c5d79613",
+      "name": "Get Yesterday's Calls",
+      "type": "n8n-nodes-contactship.contactShip",
+      "typeVersion": 2,
+      "position": [
+        240,
+        200
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a short summary of yesterday's calls.\nconst calls = $input.all().map((item) => item.json).filter((call) => call.id);\nconst day = $today.minus({ days: 1 }).toFormat('yyyy-MM-dd');\n\nconst byResult = {};\nlet seconds = 0;\nfor (const call of calls) {\n  const result = call.call_result || call.call_status || 'unknown';\n  byResult[result] = (byResult[result] || 0) + 1;\n  seconds += Number(call.duration) || 0;\n}\n\nconst lines = [\n  `*ContactShip calls on ${day}*`,\n  `${calls.length} calls, ${Math.round(seconds / 60)} minutes in total`,\n  ...Object.entries(byResult)\n    .sort((a, b) => b[1] - a[1])\n    .map(([result, count]) => `• ${result.replace(/_/g, ' ')}: ${count}`),\n];\n\nconst highlights = calls\n  .filter((call) => call.call_result === 'answered' && call.summary)\n  .slice(0, 5)\n  .map((call) => `• ${call.contact_name || call.contact_phone || 'Unknown contact'}: ${call.summary}`);\nif (highlights.length) lines.push('', '*Answered calls*', ...highlights);\nif (!calls.length) lines.push('No calls yesterday.');\n\nreturn [{ json: { text: lines.join('\\n') } }];"
+      },
+      "id": "718e32bf-d488-5854-8229-b78346512d56",
+      "name": "Build Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#calls",
+          "mode": "name"
+        },
+        "text": "={{ $json.text }}",
+        "otherOptions": {}
+      },
+      "id": "8c739de5-d7f8-5ec6-8709-ee4ebac76111",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        720,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Every Morning": {
+      "main": [
+        [
+          {
+            "node": "Get Yesterday's Calls",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Yesterday's Calls": {
+      "main": [
+        [
+          {
+            "node": "Build Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary": {
+      "main": [
+        [
+          {
+            "node": "Post to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

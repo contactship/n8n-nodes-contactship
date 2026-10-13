@@ -1,0 +1,232 @@
+{
+  "name": "Log ContactShip call results in Google Sheets",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Log every call result in Google Sheets\n\nEach time a ContactShip voice agent finishes a call, the result is added as a row: outcome, contact, duration, summary, sentiment, the fields your agent extracts and the recording.\n\n**Setup**\n1. Create a sheet with the columns: Date, Call ID, Result, Contact, Phone, Duration (s), Summary, Sentiment, Successful, Extracted Data, Recording, Agent.\n2. In **Add Row**, connect Google Sheets and pick the document and sheet.\n3. Activate the workflow and copy the **Production URL** of **Call Finished**.\n4. In ContactShip, open your voice agent → **Advanced → Post-call**, paste the URL as webhook and publish.\n\nThe trigger has one output per result (Answered, Voicemail, No Answer, Failed, Other). Here all of them go to the same sheet; connect them to different nodes to handle each case.",
+        "height": 460,
+        "width": 520
+      },
+      "id": "616f3b87-8ad9-57d2-b672-eb18e1e7f00b",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -360
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "52fe8659-7c38-561c-82a1-c05a72aa4af7",
+      "name": "Call Finished",
+      "type": "n8n-nodes-contactship.contactShipTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "349f9041-34c2-5a74-aeaa-699e4d693c3a"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $now.toISO() }}",
+            "Call ID": "={{ $json.data.call.call_id }}",
+            "Result": "={{ $json.data.call.call_result || $json.data.call.call_status }}",
+            "Contact": "={{ $json.data.contact?.full_name ?? '' }}",
+            "Phone": "={{ $json.data.contact?.phone_number || $json.data.call.to_number || '' }}",
+            "Duration (s)": "={{ Number($json.data.call.duration) || 0 }}",
+            "Summary": "={{ $json.data.call.call_analysis?.call_summary ?? '' }}",
+            "Sentiment": "={{ $json.data.call.call_analysis?.user_sentiment ?? '' }}",
+            "Successful": "={{ $json.data.call.call_analysis?.call_successful ?? '' }}",
+            "Extracted Data": "={{ JSON.stringify($json.data.call.call_analysis?.custom_analysis_data ?? {}) }}",
+            "Recording": "={{ $json.data.call.recording_url ?? '' }}",
+            "Agent": "={{ $json.data.agent?.name ?? '' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Call ID",
+              "displayName": "Call ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Result",
+              "displayName": "Result",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Contact",
+              "displayName": "Contact",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Duration (s)",
+              "displayName": "Duration (s)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Summary",
+              "displayName": "Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Sentiment",
+              "displayName": "Sentiment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Successful",
+              "displayName": "Successful",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Extracted Data",
+              "displayName": "Extracted Data",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Recording",
+              "displayName": "Recording",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Agent",
+              "displayName": "Agent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e9431ac2-4451-57f0-9ef4-042427ca39cd",
+      "name": "Add Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        360,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Call Finished": {
+      "main": [
+        [
+          {
+            "node": "Add Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Add Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Add Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Add Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Add Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

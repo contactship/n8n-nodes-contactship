@@ -1,0 +1,99 @@
+{
+  "name": "Call new form leads within seconds with a ContactShip AI agent",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Call new leads within seconds\n\nWhen your form or landing page sends a lead to this webhook, a ContactShip AI voice agent calls the lead right away.\n\n**Setup**\n1. Add your ContactShip credential (API key from **Organization → API Keys**).\n2. In **Call Lead**, pick the **Agent** and the **From Number**.\n3. Send your form submissions as JSON to the **Production URL** of **New Lead** with `name`, `phone` (international format, e.g. +12125551234), `email` and `interest`.\n4. Activate the workflow.\n\nTo receive the call result, add a **ContactShip Trigger** workflow and paste its Production URL in **Webhook URL**.",
+        "height": 400,
+        "width": 460
+      },
+      "id": "616f3b87-8ad9-57d2-b672-eb18e1e7f00b",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "contactship-new-lead",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "84fa85e7-8826-5311-81a1-ba149ae930a6",
+      "name": "New Lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "f496a246-66c9-5471-be35-893f4cde3315"
+    },
+    {
+      "parameters": {
+        "resource": "call",
+        "operation": "makeCall",
+        "agentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "fromNumber": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "toNumber": "={{ $json.body.phone }}",
+        "fullName": "={{ $json.body.name }}",
+        "additionalFields": {
+          "email": "={{ $json.body.email }}",
+          "variables": {
+            "variable": [
+              {
+                "key": "interest",
+                "value": "={{ $json.body.interest }}"
+              },
+              {
+                "key": "lead_source",
+                "value": "web form"
+              }
+            ]
+          },
+          "metadata": "={{ JSON.stringify({ source: 'n8n-form', received_at: $now.toISO() }) }}"
+        }
+      },
+      "id": "d93a89f0-e919-5633-baa6-6a6a68bf6fce",
+      "name": "Call Lead",
+      "type": "n8n-nodes-contactship.contactShip",
+      "typeVersion": 2,
+      "position": [
+        260,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "New Lead": {
+      "main": [
+        [
+          {
+            "node": "Call Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
