@@ -14,7 +14,7 @@ Rebuilt with the official n8n community node tooling (`@n8n/node-cli`) to meet t
 
 ### Added
 
-- Call: Call Contact, Get, Get Many (filters, sorting, transcript options), Get Status, Stop and Cancel Scheduled Call. Make Phone Call now supports a schedule with time zone, variables, metadata, a per-call webhook URL and updating an existing contact.
+- Call: Call Contact, Get, Get Many (filters by phone number, result, status and creation date, sorting, transcript options), Get Status, Stop and Cancel Scheduled Call. Make Phone Call now supports a schedule with time zone, variables, metadata, a per-call webhook URL and updating an existing contact.
 - Call: **Agent Variables** shows one input per `{{variable}}` of the selected agent's prompt, next to free variables (name and value, or JSON).
 - Contact: Create or Update (by phone number), Update Properties, Get Tags, Add Tag and Remove Tag with a tag picker, comments written as a member, AI, system or automation, and pagination with Return All and Limit on Get Many.
 - Board (pipeline): Get Many, Get, Add Contact, Get Contact Card, Move Card and Remove Card, with board and stage pickers.

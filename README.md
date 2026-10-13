@@ -51,13 +51,15 @@ Fields that point to a ContactShip record (agent, agent version, voice, phone nu
 | --- | --- | --- |
 | Make Phone Call | Calls a phone number with an AI voice agent. Optional: country, email, delay, schedule (date, time and time zone), variables passed to the agent, metadata, per-call webhook URL, and whether to update an existing contact. | `POST /v1/calls/single-phone-call` |
 | Call Contact | Calls an existing contact with an AI voice agent. Optional: schedule, variables and metadata. | `POST /v1/calls/single-contact-call` |
-| Get | Retrieves a call with its analysis. With Simplify off, it can include the transcript, tool calls and word timing (JSON or TOON format). | `GET /v1/calls/{callId}` |
-| Get Many | Lists calls, filtered by agent, result, status, campaign, phone number and creation date, sorted by date. | `GET /v1/calls` |
+| Get | Retrieves a call with its analysis. With Simplify off, it includes the transcript, and optionally the timing of each word. | `GET /v1/calls/{callId}` |
+| Get Many | Lists the calls made through the API, newest or oldest first, filtered by phone number, result, status and creation date. | `GET /v1/calls` |
 | Get Status | Tells whether a call is queued, ringing, in progress or finished. | `GET /v1/calls/{callId}/status` |
 | Stop | Hangs up a call that is ringing or in progress. | `POST /v1/calls/single-phone-call/{callId}/stop` |
 | Cancel Scheduled Call | Cancels a scheduled call before it is placed. | `POST /v1/calls/single-phone-call/{callId}/cancel` |
 
 Phone numbers must be in international format (`+12125551234`). The node removes spaces, dashes, dots and parentheses before sending them.
+
+**Get Many** sends the phone number filter to ContactShip; the result, status and date filters are applied by the node to the calls ContactShip returns, so a filter on an old date range reads more pages. With a 'Created After' date, the node stops reading at that date.
 
 **Agent Variables** lists the `{{variables}}` written in the selected agent's prompt and begin message, one input each (ContactShip's own variables, such as `{{contact_data}}` or `{{current_time}}`, are left out). **Extra Variables** (name and value) and **Extra Variables (JSON)** add any other context. All of them are sent as `additional_data`; when two have the same name, the later one wins.
 

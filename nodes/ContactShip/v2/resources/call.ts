@@ -1,8 +1,9 @@
 import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 
-import { contactShipApiRequest, contactShipApiRequestAllItems } from '../../shared/transport';
+import { contactShipApiRequest } from '../../shared/transport';
 import {
+	extractList,
 	formatScheduleTime,
 	getIdParameter,
 	normalizePhoneNumber,
@@ -145,36 +146,16 @@ const scheduleOption: INodeProperties = {
 	],
 };
 
-const includeToolsOption: INodeProperties = {
-	displayName: 'Include Tool Calls',
-	name: 'includeTools',
-	type: 'boolean',
-	default: false,
-	description: 'Whether to include the transcript with the tool calls the agent made',
-};
-
 const includeWordsOption: INodeProperties = {
 	displayName: 'Include Word Timing',
 	name: 'includeWords',
 	type: 'boolean',
 	default: false,
-	description: 'Whether to include per-word timing in the transcript',
+	description: 'Whether to keep the per-word timing of each transcript entry',
 };
 
-const transcriptFormatOption: INodeProperties = {
-	displayName: 'Transcript Format',
-	name: 'transcriptFormat',
-	type: 'options',
-	options: [
-		{ name: 'JSON', value: 'json' },
-		{
-			name: 'TOON',
-			value: 'toon',
-			description: 'Compact text encoding that uses fewer tokens when passed to an AI model',
-		},
-	],
-	default: 'json',
-};
+/** Largest page of calls requested at once. Call records carry their transcript, so pages are kept small. */
+const CALLS_PAGE_SIZE = 100;
 
 export const callOperations: INodeProperties[] = [
 	{
@@ -384,16 +365,9 @@ export const callFields: INodeProperties[] = [
 		placeholder: 'Add Filter',
 		default: {},
 		displayOptions: { show: { resource: [RESOURCE], operation: ['getAll'] } },
+		description:
+			'Filters other than the phone number are applied by the node to the calls ContactShip returns, newest first',
 		options: [
-			{
-				displayName: 'Agent Name or ID',
-				name: 'agentId',
-				type: 'options',
-				typeOptions: { loadOptionsMethod: 'getAgents' },
-				default: '',
-				description:
-					'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
-			},
 			{
 				displayName: 'Call Result',
 				name: 'callResult',
@@ -412,24 +386,17 @@ export const callFields: INodeProperties[] = [
 				name: 'callStatus',
 				type: 'options',
 				options: [
-					{ name: 'Answering Machine', value: 'answering-machine' },
-					{ name: 'Busy', value: 'busy' },
-					{ name: 'Completed', value: 'completed' },
+					{ name: 'Canceled', value: 'canceled' },
+					{ name: 'Ended', value: 'ended' },
 					{ name: 'Failed', value: 'failed' },
-					{ name: 'In Progress', value: 'in-progress' },
-					{ name: 'In Queue', value: 'in-queue' },
-					{ name: 'Incomplete', value: 'incomplete' },
-					{ name: 'No Answer', value: 'no-answer' },
+					{ name: 'In Progress', value: 'in_progress' },
+					{ name: 'In Queue', value: 'in_queue' },
+					{ name: 'No Answer', value: 'no_answer' },
+					{ name: 'Ringing', value: 'pending' },
 					{ name: 'Scheduled', value: 'scheduled' },
-					{ name: 'Voicemail', value: 'voice_mail' },
+					{ name: 'Voicemail', value: 'voicemail' },
 				],
-				default: 'completed',
-			},
-			{
-				displayName: 'Campaign ID',
-				name: 'campaignId',
-				type: 'string',
-				default: '',
+				default: 'ended',
 			},
 			{
 				displayName: 'Created After',
@@ -451,7 +418,7 @@ export const callFields: INodeProperties[] = [
 				type: 'string',
 				default: '',
 				placeholder: 'e.g. +12125551234',
-				description: 'Only calls with this phone number',
+				description: 'Only calls with this phone number, in international format',
 			},
 		],
 	},
@@ -466,16 +433,14 @@ export const callFields: INodeProperties[] = [
 		default: {},
 		displayOptions: { show: { resource: [RESOURCE], operation: ['get'], simplify: [false] } },
 		options: [
-			includeToolsOption,
 			{
 				displayName: 'Include Transcript',
 				name: 'includeTranscript',
 				type: 'boolean',
 				default: true,
-				description: 'Whether to include the transcript of the call',
+				description: 'Whether to include the transcript of the call (chat_history)',
 			},
 			includeWordsOption,
-			transcriptFormatOption,
 		],
 	},
 	{
@@ -486,30 +451,201 @@ export const callFields: INodeProperties[] = [
 		default: {},
 		displayOptions: { show: { resource: [RESOURCE], operation: ['getAll'], simplify: [false] } },
 		options: [
-			includeToolsOption,
 			{
 				displayName: 'Include Transcript',
 				name: 'includeTranscript',
 				type: 'boolean',
 				default: false,
-				description: 'Whether to include the transcript of each call',
+				description: 'Whether to include the transcript of each call (chat_history)',
 			},
 			includeWordsOption,
-			transcriptFormatOption,
 		],
 	},
 	sortField(RESOURCE, 'getAll'),
 ];
 
-function transcriptQuery(options: IDataObject, includeByDefault: boolean): IDataObject {
+/**
+ * ContactShip always returns the transcript (`chat_history`, with per-word
+ * timing) and does not accept options to leave it out, so the node removes
+ * what the options leave out.
+ */
+function applyTranscriptOptions(
+	call: IDataObject,
+	options: IDataObject,
+	includeByDefault: boolean,
+): IDataObject {
 	const includeTranscript = (options.includeTranscript as boolean | undefined) ?? includeByDefault;
-	const qs: IDataObject = { include_transcript: includeTranscript };
-	if (options.includeTools) qs.include_tools = true;
-	if (options.includeWords) qs.include_words = true;
-	if (options.transcriptFormat && options.transcriptFormat !== 'json') {
-		qs.transcript_format = options.transcriptFormat;
+	if (!includeTranscript) {
+		const withoutTranscript = { ...call };
+		delete withoutTranscript.chat_history;
+		return withoutTranscript;
 	}
-	return qs;
+	if (options.includeWords === true || !Array.isArray(call.chat_history)) return call;
+	return {
+		...call,
+		chat_history: (call.chat_history as unknown[]).map((entry) => {
+			if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+			const withoutWords = { ...(entry as IDataObject) };
+			delete withoutWords.words;
+			return withoutWords;
+		}),
+	};
+}
+
+/** Milliseconds that `timeZone` is ahead of UTC at the given instant. */
+function timeZoneOffset(time: number, timeZone: string): number {
+	const parts = new Intl.DateTimeFormat('en-US', {
+		timeZone,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+		hourCycle: 'h23',
+	}).formatToParts(new Date(time));
+	const get = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+	const asUtc = Date.UTC(
+		get('year'),
+		get('month') - 1,
+		get('day'),
+		get('hour'),
+		get('minute'),
+		get('second'),
+	);
+	return asUtc - Math.floor(time / 1000) * 1000;
+}
+
+/** Reads a date filter. A date without an offset is taken in the workflow time zone. */
+function toTime(value: unknown, label: string, timeZone: string): number | undefined {
+	if (value === undefined || value === null || value === '') return undefined;
+	const raw = String(value).trim();
+	const local = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?$/.exec(
+		raw,
+	);
+	if (local) {
+		const [, year, month, day, hour = '0', minute = '0', second = '0'] = local;
+		const guess = Date.UTC(+year, +month - 1, +day, +hour, +minute, +second);
+		try {
+			return guess - timeZoneOffset(guess, timeZone);
+		} catch {
+			return guess;
+		}
+	}
+	const time = new Date(raw).getTime();
+	if (Number.isNaN(time)) {
+		throw new Error(`The date '${raw}' in '${label}' is not valid`);
+	}
+	return time;
+}
+
+interface CallFilter {
+	callResult?: string;
+	callStatus?: string;
+	from?: number;
+	to?: number;
+}
+
+function matchesCall(call: IDataObject, filter: CallFilter): boolean {
+	if (filter.callResult && call.call_result !== filter.callResult) return false;
+	if (filter.callStatus && call.call_status !== filter.callStatus) return false;
+	if (filter.from !== undefined || filter.to !== undefined) {
+		const created = new Date(String(call.created_at ?? '')).getTime();
+		if (Number.isNaN(created)) return false;
+		if (filter.from !== undefined && created < filter.from) return false;
+		if (filter.to !== undefined && created > filter.to) return false;
+	}
+	return true;
+}
+
+/**
+ * Lists calls. `GET /v1/calls` only accepts `limit`, `offset`, `order` and
+ * `phoneNumber` (any other query parameter is rejected with a 400), so the
+ * other filters are applied here. Calls are read newest first, which lets the
+ * loop stop as soon as it passes 'Created After'.
+ */
+async function getManyCalls(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	returnAll: boolean,
+	limit: number,
+	order: string,
+	filters: IDataObject,
+): Promise<IDataObject[]> {
+	let filter: CallFilter;
+	try {
+		filter = {
+			callResult: filters.callResult ? String(filters.callResult) : undefined,
+			callStatus: filters.callStatus ? String(filters.callStatus) : undefined,
+			from: toTime(filters.dateFrom, 'Created After', this.getTimezone()),
+			to: toTime(filters.dateTo, 'Created Before', this.getTimezone()),
+		};
+	} catch (error) {
+		throw new NodeOperationError(this.getNode(), (error as Error).message, {
+			description: 'Use an ISO 8601 date, for example 2026-06-15T14:30:00.',
+			itemIndex,
+		});
+	}
+	// With 'Created After', calls are read newest first so the loop can stop at that date.
+	const readOrder = filter.from !== undefined ? 'desc' : order;
+	const qs: IDataObject = { order: readOrder };
+	if (filters.phoneNumber) {
+		qs.phoneNumber = normalizePhoneNumber.call(
+			this,
+			String(filters.phoneNumber),
+			'Phone Number',
+			itemIndex,
+		);
+	}
+	const filtered = Boolean(filter.callResult || filter.callStatus || filter.from || filter.to);
+	const canStopAtLimit = !returnAll && readOrder === order;
+
+	const calls: IDataObject[] = [];
+	for (let offset = 0; ; ) {
+		const pageSize =
+			filtered || !canStopAtLimit
+				? CALLS_PAGE_SIZE
+				: Math.min(CALLS_PAGE_SIZE, limit - calls.length);
+		if (pageSize <= 0) break;
+		const response = await contactShipApiRequest.call(
+			this,
+			'GET',
+			'/v1/calls',
+			undefined,
+			{ ...qs, limit: pageSize, offset },
+			itemIndex,
+		);
+		const page = extractList(response);
+		offset += page.length;
+		let passedRange = false;
+		for (const call of page) {
+			const created = new Date(String(call.created_at ?? '')).getTime();
+			if (!Number.isNaN(created)) {
+				if (readOrder === 'desc' && filter.from !== undefined && created < filter.from) {
+					passedRange = true;
+					break;
+				}
+				if (readOrder === 'asc' && filter.to !== undefined && created > filter.to) {
+					passedRange = true;
+					break;
+				}
+			}
+			if (matchesCall(call, filter)) calls.push(call);
+			if (canStopAtLimit && calls.length >= limit) break;
+		}
+		const totalRows = Number((response.pagination as IDataObject | undefined)?.total_rows);
+		if (
+			passedRange ||
+			page.length < pageSize ||
+			(Number.isFinite(totalRows) && offset >= totalRows) ||
+			(canStopAtLimit && calls.length >= limit)
+		) {
+			break;
+		}
+	}
+
+	if (readOrder !== order) calls.reverse();
+	return returnAll ? calls : calls.slice(0, limit);
 }
 
 function readSchedule(
@@ -649,47 +785,41 @@ export const executeCall: ResourceHandler = async function (this, operation, i) 
 	if (operation === 'get') {
 		const callId = encodeURIComponent((this.getNodeParameter('callId', i) as string).trim());
 		const simplify = this.getNodeParameter('simplify', i, true) as boolean;
-		const options = simplify ? {} : (this.getNodeParameter('options', i, {}) as IDataObject);
-		const qs = simplify ? { include_transcript: false } : transcriptQuery(options, true);
 		const response = await contactShipApiRequest.call(
 			this,
 			'GET',
 			`/v1/calls/${callId}`,
 			undefined,
-			qs,
+			undefined,
 			i,
 		);
 		const call = unwrap(response) as IDataObject;
-		return toExecutionData.call(this, simplify ? simplifyCall(call) : call, i);
+		if (simplify) return toExecutionData.call(this, simplifyCall(call), i);
+		const options = this.getNodeParameter('options', i, {}) as IDataObject;
+		return toExecutionData.call(this, applyTranscriptOptions(call, options, true), i);
 	}
 
 	if (operation === 'getAll') {
 		const returnAll = this.getNodeParameter('returnAll', i) as boolean;
-		const limit = returnAll ? undefined : (this.getNodeParameter('limit', i) as number);
+		const limit = returnAll ? 0 : (this.getNodeParameter('limit', i) as number);
 		const filters = this.getNodeParameter('filters', i, {}) as IDataObject;
 		const sort = this.getNodeParameter('sort', i, {}) as IDataObject;
 		const simplify = this.getNodeParameter('simplify', i, true) as boolean;
-		const options = simplify ? {} : (this.getNodeParameter('options', i, {}) as IDataObject);
-
-		const qs: IDataObject = {
-			order: sort.order ?? 'desc',
-			agent_id: filters.agentId,
-			call_result: filters.callResult,
-			call_status: filters.callStatus,
-			campaign_id: filters.campaignId,
-			date_from: filters.dateFrom,
-			date_to: filters.dateTo,
-			phoneNumber: filters.phoneNumber,
-			...(simplify ? { include_transcript: false } : transcriptQuery(options, false)),
-		};
-
-		const calls = await contactShipApiRequestAllItems.call(this, '/v1/calls', qs, {
+		const calls = await getManyCalls.call(
+			this,
+			i,
 			returnAll,
 			limit,
-			pageSize: 1000,
-			itemIndex: i,
-		});
-		return toExecutionData.call(this, simplify ? calls.map(simplifyCall) : calls, i);
+			sort.order === 'asc' ? 'asc' : 'desc',
+			filters,
+		);
+		if (simplify) return toExecutionData.call(this, calls.map(simplifyCall), i);
+		const options = this.getNodeParameter('options', i, {}) as IDataObject;
+		return toExecutionData.call(
+			this,
+			calls.map((call) => applyTranscriptOptions(call, options, false)),
+			i,
+		);
 	}
 
 	if (operation === 'getStatus') {
